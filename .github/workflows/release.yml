@@ -1,9 +1,13 @@
-name: Release lib-ml
+name: Auto Tag, Release, and Bump (Python Package)
 
 on:
   push:
-    tags:
-      - 'v*.*.*'
+    branches:
+      - main
+
+permissions:
+  contents: write
+  packages: write
 
 jobs:
   release:
@@ -13,16 +17,69 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
+      - name: Set up Git
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: Install dependencies
+      - name: Install build dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install .
+          pip install setuptools wheel twine
 
-      - name: Test import
+      - name: Read version from VERSION.txt
+        id: read_version
         run: |
-          python -c "from lib_ml.preprocess import clean_review; print('✅ Import successful')"
+          VERSION=$(cat VERSION.txt)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Current version: $VERSION"
+
+      - name: Check if tag already exists
+        run: |
+          if git ls-remote --tags origin | grep -q "refs/tags/${{ env.VERSION }}"; then
+            echo "Tag already exists. Skipping release."
+            exit 0
+          fi
+
+      - name: Create Git tag and push
+        run: |
+          git tag ${{ env.VERSION }}
+          git push origin ${{ env.VERSION }}
+
+      - name: Build package
+        run: python setup.py sdist bdist_wheel
+
+      - name: Publish to GitHub Packages
+        run: |
+          twine upload --repository-url https://upload.pypi.org/legacy/ dist/*
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ env.VERSION }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Bump patch version in VERSION.txt
+        run: |
+          VERSION=${{ env.VERSION }}
+          IFS='.' read -r MAJOR MINOR PATCH <<< "${VERSION#v}"
+          NEXT_PATCH=$((PATCH + 1))
+          NEXT_VERSION="v${MAJOR}.${MINOR}.${NEXT_PATCH}"
+          echo "$NEXT_VERSION" > VERSION.txt
+          echo "NEXT_VERSION=$NEXT_VERSION" >> $GITHUB_ENV
+
+      - name: Commit and Push bumped VERSION.txt
+        run: |
+          git add VERSION.txt
+          git commit -m "Bump version to ${{ env.NEXT_VERSION }} after release ${{ env.VERSION }}"
+          git push origin main
