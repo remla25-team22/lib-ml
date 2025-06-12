@@ -1,4 +1,4 @@
-name: Auto Tag, Release, and Bump (Python Package)
+name: Auto Tag, Release, and Bump (Python Package to GitHub Packages)
 
 on:
   push:
@@ -56,7 +56,7 @@ jobs:
 
       - name: Publish to GitHub Packages
         run: |
-          twine upload --repository-url https://upload.pypi.org/legacy/ dist/*
+          twine upload --repository-url https://upload.github.com/OWNER/REPO/  https://upload.github.com/repos/${{ github.repository }}/dist/ dist/*
         env:
           TWINE_USERNAME: __token__
           TWINE_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
